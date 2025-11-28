@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imposter Game</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #2c3e50; color: white; text-align: center; padding: 20px; }
+        .screen { display: none; }
+        .active { display: block; }
+        button { background: #e74c3c; color: white; border: none; padding: 15px 30px; font-size: 18px; margin: 10px; border-radius: 8px; cursor: pointer; width: 100%; max-width: 300px; }
+        button:disabled { background: #95a5a6; }
+        input, select { padding: 10px; font-size: 16px; border-radius: 5px; border: none; width: 80%; max-width: 300px; margin: 10px 0; }
+        .card { background: #34495e; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 400px; }
+        .hebrew-text { direction: rtl; font-size: 1.1em; color: #f1c40f; margin-top: 10px; }
+        h1 { color: #ecf0f1; }
+        #word-reveal { font-size: 2em; font-weight: bold; color: #2ecc71; }
+        #imposter-reveal { font-size: 2em; font-weight: bold; color: #e74c3c; }
+        .player-list { list-style: none; padding: 0; }
+        .player-list li { background: #16a085; margin: 5px; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="screen-home" class="screen active">
+        <h1>IMPOSTER</h1>
+        <button onclick="showHebrewRules()">איך משחקים? (How to Play)</button>
+        <br>
+        <button onclick="createGame()">Create Lobby</button>
+        <br>
+        <input type="number" id="join-code" placeholder="Enter 10-digit Code">
+        <button onclick="joinGame()">Join Game</button>
+    </div>
+
+    <div id="screen-rules" class="screen">
+        <div class="card hebrew-text">
+            <h2>איך משחקים?</h2>
+            <p>1. כולם מצטרפים ללובי ומקבלים שם (Player1, Player2).</p>
+            <p>2. המשחק מתחיל. כולם מקבלים מילה סודית, חוץ מאחד שהוא ה"מתחזה" (Imposter).</p>
+            <p>3. השחקנים הרגילים מקבלים גם תרגום והגדרה של המילה.</p>
+            <p>4. כל אחד בתורו אומר מילה שקשורה למילה הסודית, בלי לגלות אותה לגמרי.</p>
+            <p>5. המטרה: לגלות מי המתחזה שלא יודע את המילה!</p>
+            <button onclick="goHome()">חזרה (Back)</button>
+        </div>
+    </div>
+
+    <div id="screen-lobby" class="screen">
+        <h2 id="lobby-code-display">Room Code: </h2>
+        <h3>Players:</h3>
+        <ul id="player-list" class="player-list"></ul>
+        
+        <div id="host-controls" style="display:none;">
+            <hr>
+            <label>Category:</label>
+            <select id="category-select" onchange="updateSettings()"></select>
+            <br>
+            <label>Imposters:</label>
+            <select id="imposter-count" onchange="updateSettings()">
+                <option value="1">1 Imposter</option>
+                <option value="2">2 Imposters</option>
+            </select>
+            <br>
+            <button onclick="startGame()">Start Game</button>
+        </div>
+        <div id="waiting-msg" style="display:none;">Waiting for host to start...</div>
+    </div>
+
+    <div id="screen-reveal" class="screen">
+        <div class="card">
+            <h2 id="role-title"></h2>
+            
+            <div id="normal-view" style="display:none;">
+                <p>Your word is:</p>
+                <div id="word-reveal"></div>
+                <hr>
+                <div class="hebrew-text">
+                    <p id="hebrew-word"></p>
+                    <p id="hebrew-def"></p>
+                </div>
+            </div>
+
+            <div id="imposter-view" style="display:none;">
+                <div id="imposter-reveal">YOU ARE THE IMPOSTER</div>
+                <p>Try to blend in. You don't know the word.</p>
+            </div>
+
+            <br>
+            <button id="btn-continue" onclick="sendReady()">Continue</button>
+            <p id="waiting-others" style="display:none;">Waiting for others...</p>
+        </div>
+    </div>
+
+    <div id="screen-game" class="screen">
+        <h1>Game On!</h1>
+        <div class="card">
+            <h3>Who starts?</h3>
+            <h2 id="starter-name" style="color: #f1c40f;"></h2>
+            <p>Give a hint about the word!</p>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myRoomId = null;
+        let isHost = false;
+
+        // Navigation
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+        function showHebrewRules() { showScreen('screen-rules'); }
+        function goHome() { showScreen('screen-home'); }
+
+        // Socket Actions
+        function createGame() { socket.emit('createLobby'); }
+        
+        function joinGame() { 
+            const code = document.getElementById('join-code').value;
+            if(code.length === 10) socket.emit('joinLobby', code);
+            else alert("Please enter a valid 10-digit code");
+        }
+
+        function updateSettings() {
+            const cat = document.getElementById('category-select').value;
+            const imp = document.getElementById('imposter-count').value;
+            socket.emit('updateSettings', { roomId: myRoomId, setting: 'category', value: cat });
+            socket.emit('updateSettings', { roomId: myRoomId, setting: 'imposters', value: imp });
+        }
+
+        function startGame() { socket.emit('startGame', myRoomId); }
+        function sendReady() { 
+            document.getElementById('btn-continue').style.display = 'none';
+            document.getElementById('waiting-others').style.display = 'block';
+            socket.emit('playerReady', myRoomId); 
+        }
+
+        // Socket Listeners
+        socket.on('lobbyCreated', (data) => {
+            // Populate Categories only once when creating
+            const select = document.getElementById('category-select');
+            select.innerHTML = '';
+            data.categories.forEach(c => {
+                let opt = document.createElement('option');
+                opt.value = c;
+                opt.innerText = c;
+                select.appendChild(opt);
+            });
+        });
+
+        socket.on('joinedRoom', (data) => {
+            myRoomId = data.roomId;
+            isHost = data.isHost;
+            document.getElementById('lobby-code-display').innerText = "Code: " + data.roomId;
+            
+            if (isHost) {
+                document.getElementById('host-controls').style.display = 'block';
+                document.getElementById('waiting-msg').style.display = 'none';
+                
+                // If joining as host, we also need to populate categories if not already done
+                 if(document.getElementById('category-select').options.length === 0) {
+                     data.categories.forEach(c => {
+                        let opt = document.createElement('option');
+                        opt.value = c;
+                        opt.innerText = c;
+                        document.getElementById('category-select').appendChild(opt);
+                    });
+                 }
+            } else {
+                document.getElementById('host-controls').style.display = 'none';
+                document.getElementById('waiting-msg').style.display = 'block';
+            }
+            showScreen('screen-lobby');
+        });
+
+        socket.on('updateLobbyUI', (room) => {
+            const list = document.getElementById('player-list');
+            list.innerHTML = '';
+            room.players.forEach(p => {
+                let li = document.createElement('li');
+                li.innerText = p.name + (p.isHost ? " (Host)" : "");
+                list.appendChild(li);
+            });
+        });
+
+        socket.on('gameStarted', (data) => {
+            showScreen('screen-reveal');
+            
+            // Store starter name for next screen
+            document.getElementById('starter-name').innerText = data.startingPlayer;
+
+            if (data.isImposter) {
+                document.getElementById('role-title').innerText = "SHHH!";
+                document.getElementById('imposter-view').style.display = 'block';
+                document.getElementById('normal-view').style.display = 'none';
+            } else {
+                document.getElementById('role-title').innerText = "MEMORIZE!";
+                document.getElementById('imposter-view').style.display = 'none';
+                document.getElementById('normal-view').style.display = 'block';
+                
+                document.getElementById('word-reveal').innerText = data.wordData.word;
+                document.getElementById('hebrew-word').innerText = data.wordData.hebrew;
+                document.getElementById('hebrew-def').innerText = data.wordData.def;
+            }
+        });
+
+        socket.on('allReady', () => {
+            showScreen('screen-game');
+        });
+
+        socket.on('error', (msg) => alert(msg));
+    </script>
+</body>
+</html>

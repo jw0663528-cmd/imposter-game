@@ -1,0 +1,39 @@
+// words.js
+module.exports = {
+  // Categories derived from your uploaded file
+  categories: [
+    "Vehicles", // [cite: 1]
+    "Property", // [cite: 2]
+    "Mobile Phone & Tablets", // [cite: 3]
+    "Electronics", // [cite: 5]
+    "Home, Furniture & Appliance", // [cite: 6]
+    "Health & Beauty", // [cite: 8]
+    "Fashion", // [cite: 9]
+    "Sports, Arts & Outdoors", // [cite: 10]
+    "Seeking Work CVs", // [cite: 11]
+    "Services", // [cite: 13]
+    "Jobs", // [cite: 14]
+    "Babies & Kids", // [cite: 15]
+    "Animal & Pets", // [cite: 17]
+    "Agriculture & Food", // [cite: 18]
+    "Commercial Equipment & Tools", // [cite: 20]
+    "General" // [cite: 21]
+  ],
+  // Sample data - You can expand this list to 500 items per category
+  wordList: {
+    "Vehicles": [
+      { word: "Ferrari", hebrew: "פרארי", def: "A luxury Italian sports car manufacturer." },
+      { word: "Tractor", hebrew: "טרקטור", def: "A powerful motor vehicle used in farming." },
+      { word: "Bicycle", hebrew: "אופניים", def: "A vehicle composed of two wheels held in a frame one behind the other." }
+    ],
+    "Animal & Pets": [
+       { word: "Golden Retriever", hebrew: "גולדן רטריבר", def: "A medium-sized Scottish breed of retriever dog." },
+       { word: "Parrot", hebrew: "תוכי", def: "A bird, often vividly colored, with a short down-curved hooked bill." }
+    ],
+    // ... You would populate the rest of the categories here
+    "Electronics": [
+        { word: "Laptop", hebrew: "מחשב נייד", def: "A computer that is portable and suitable for use while traveling." },
+        { word: "Smartwatch", hebrew: "שעון חכם", def: "A wearable computing device that closely resembles a wristwatch." }
+    ]
+  }
+};

@@ -1,0 +1,123 @@
+// server.js
+const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
+const { categories, wordList } = require('./words');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static('public'));
+
+// Store game states
+const rooms = {};
+
+io.on('connection', (socket) => {
+    
+    // Create Lobby
+    socket.on('createLobby', () => {
+        // Generate 10-digit random number as requested
+        const roomId = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+        
+        rooms[roomId] = {
+            players: [],
+            hostId: socket.id,
+            isPlaying: false,
+            settings: { imposters: 1, category: categories[0] }, // Default settings
+            gameData: {} 
+        };
+        
+        joinRoomLogic(socket, roomId, true);
+        socket.emit('lobbyCreated', { roomId, categories: categories });
+    });
+
+    // Join Lobby
+    socket.on('joinLobby', (roomId) => {
+        if (rooms[roomId] && !rooms[roomId].isPlaying) {
+            joinRoomLogic(socket, roomId, false);
+        } else {
+            socket.emit('error', 'Room not found or game already started.');
+        }
+    });
+
+    // Update Settings (Host Only)
+    socket.on('updateSettings', ({ roomId, setting, value }) => {
+        if (rooms[roomId] && rooms[roomId].hostId === socket.id) {
+            rooms[roomId].settings[setting] = value;
+            io.to(roomId).emit('updateLobbyUI', rooms[roomId]);
+        }
+    });
+
+    // Start Game
+    socket.on('startGame', (roomId) => {
+        const room = rooms[roomId];
+        if (!room || room.hostId !== socket.id) return;
+
+        const category = room.settings.category;
+        const availableWords = wordList[category] || wordList['Vehicles']; // Fallback
+        
+        // 1. Select random word
+        const secretData = availableWords[Math.floor(Math.random() * availableWords.length)];
+        
+        // 2. Assign Imposters
+        let playerIds = room.players.map(p => p.id);
+        let imposters = [];
+        let imposterCount = Math.min(room.settings.imposters, playerIds.length - 1);
+        
+        while (imposters.length < imposterCount) {
+            const randIndex = Math.floor(Math.random() * playerIds.length);
+            const selected = playerIds.splice(randIndex, 1)[0];
+            imposters.push(selected);
+        }
+
+        // 3. Determine who starts (Random player)
+        const startingPlayer = room.players[Math.floor(Math.random() * room.players.length)].name;
+
+        // 4. Distribute Roles
+        room.players.forEach(player => {
+            const isImposter = imposters.includes(player.id);
+            io.to(player.id).emit('gameStarted', {
+                isImposter,
+                wordData: isImposter ? null : secretData,
+                startingPlayer
+            });
+        });
+
+        room.isPlaying = true;
+        room.readyCount = 0; // Reset ready check
+    });
+
+    // Player clicked "Continue" after reading word
+    socket.on('playerReady', (roomId) => {
+        if (!rooms[roomId]) return;
+        rooms[roomId].readyCount = (rooms[roomId].readyCount || 0) + 1;
+
+        // If everyone clicked continue
+        if (rooms[roomId].readyCount === rooms[roomId].players.length) {
+            io.to(roomId).emit('allReady');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        // Handle cleanup (removing players) logic here
+    });
+});
+
+function joinRoomLogic(socket, roomId, isHost) {
+    const room = rooms[roomId];
+    const playerNumber = room.players.length + 1;
+    const playerName = `Player${playerNumber}`;
+
+    const player = { id: socket.id, name: playerName, isHost };
+    room.players.push(player);
+    socket.join(roomId);
+
+    // Notify user
+    socket.emit('joinedRoom', { roomId, playerName, isHost, categories });
+    // Notify room
+    io.to(roomId).emit('updateLobbyUI', room);
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
