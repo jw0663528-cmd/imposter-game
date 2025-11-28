@@ -9,16 +9,24 @@
         body { font-family: 'Segoe UI', sans-serif; background: #2c3e50; color: white; text-align: center; padding: 20px; }
         .screen { display: none; }
         .active { display: block; }
+        
         button { background: #e74c3c; color: white; border: none; padding: 15px 30px; font-size: 18px; margin: 10px; border-radius: 8px; cursor: pointer; width: 100%; max-width: 300px; }
         button:disabled { background: #95a5a6; }
+        button.secondary { background: #7f8c8d; } /* Grey button for 'Return' */
+        
         input, select { padding: 10px; font-size: 16px; border-radius: 5px; border: none; width: 80%; max-width: 300px; margin: 10px 0; }
+        
         .card { background: #34495e; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 400px; }
         .hebrew-text { direction: rtl; font-size: 1.1em; color: #f1c40f; margin-top: 10px; }
+        
         h1 { color: #ecf0f1; }
-        #word-reveal { font-size: 2em; font-weight: bold; color: #2ecc71; }
-        #imposter-reveal { font-size: 2em; font-weight: bold; color: #e74c3c; }
+        #word-reveal { font-size: 2em; font-weight: bold; color: #2ecc71; margin: 10px 0; }
+        #imposter-reveal { font-size: 2em; font-weight: bold; color: #e74c3c; margin: 10px 0; }
+        
         .player-list { list-style: none; padding: 0; }
         .player-list li { background: #16a085; margin: 5px; padding: 10px; border-radius: 5px; }
+
+        #timer-display { font-size: 3em; font-weight: bold; color: #3498db; margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -36,11 +44,10 @@
     <div id="screen-rules" class="screen">
         <div class="card hebrew-text">
             <h2>איך משחקים?</h2>
-            <p>1. כולם מצטרפים ללובי ומקבלים שם (Player1, Player2).</p>
-            <p>2. המשחק מתחיל. כולם מקבלים מילה סודית, חוץ מאחד שהוא ה"מתחזה" (Imposter).</p>
-            <p>3. השחקנים הרגילים מקבלים גם תרגום והגדרה של המילה.</p>
-            <p>4. כל אחד בתורו אומר מילה שקשורה למילה הסודית, בלי לגלות אותה לגמרי.</p>
-            <p>5. המטרה: לגלות מי המתחזה שלא יודע את המילה!</p>
+            <p>1. כולם מצטרפים ללובי ומקבלים שם.</p>
+            <p>2. כולם מקבלים מילה חוץ מהמתחזה.</p>
+            <p>3. כל אחד נותן רמז.</p>
+            <p>4. מנסים לגלות מי המתחזה!</p>
             <button onclick="goHome()">חזרה (Back)</button>
         </div>
     </div>
@@ -59,11 +66,18 @@
             <select id="imposter-count" onchange="updateSettings()">
                 <option value="1">1 Imposter</option>
                 <option value="2">2 Imposters</option>
+                <option value="3">3 Imposters</option>
             </select>
+            <br>
+            <label>Timer (Minutes):</label>
+            <input type="number" id="timer-setting" value="10" min="1" max="60" onchange="updateSettings()">
             <br>
             <button onclick="startGame()">Start Game</button>
         </div>
         <div id="waiting-msg" style="display:none;">Waiting for host to start...</div>
+        
+        <br>
+        <button class="secondary" onclick="leaveGame()">Leave Lobby</button>
     </div>
 
     <div id="screen-reveal" class="screen">
@@ -71,6 +85,7 @@
             <h2 id="role-title"></h2>
             
             <div id="normal-view" style="display:none;">
+                <p>Category: <span id="normal-category" style="color:#f1c40f"></span></p>
                 <p>Your word is:</p>
                 <div id="word-reveal"></div>
                 <hr>
@@ -82,6 +97,7 @@
 
             <div id="imposter-view" style="display:none;">
                 <div id="imposter-reveal">YOU ARE THE IMPOSTER</div>
+                <p>Category: <span id="imposter-category-display" style="color:#f1c40f; font-weight:bold;"></span></p>
                 <p>Try to blend in. You don't know the word.</p>
             </div>
 
@@ -93,17 +109,20 @@
 
     <div id="screen-game" class="screen">
         <h1>Game On!</h1>
+        <div id="timer-display">00:00</div>
         <div class="card">
             <h3>Who starts?</h3>
             <h2 id="starter-name" style="color: #f1c40f;"></h2>
             <p>Give a hint about the word!</p>
         </div>
+        <button class="secondary" onclick="leaveGame()">Return to Main Menu</button>
     </div>
 
     <script>
         const socket = io();
         let myRoomId = null;
         let isHost = false;
+        let timerInterval = null;
 
         // Navigation
         function showScreen(id) {
@@ -122,11 +141,25 @@
             else alert("Please enter a valid 10-digit code");
         }
 
+        function leaveGame() {
+            if(myRoomId) {
+                socket.emit('leaveRoom', myRoomId);
+                myRoomId = null;
+            }
+            // Reset UI
+            document.getElementById('player-list').innerHTML = '';
+            clearInterval(timerInterval);
+            goHome();
+        }
+
         function updateSettings() {
             const cat = document.getElementById('category-select').value;
             const imp = document.getElementById('imposter-count').value;
+            const time = document.getElementById('timer-setting').value;
+            
             socket.emit('updateSettings', { roomId: myRoomId, setting: 'category', value: cat });
             socket.emit('updateSettings', { roomId: myRoomId, setting: 'imposters', value: imp });
+            socket.emit('updateSettings', { roomId: myRoomId, setting: 'timerDuration', value: time });
         }
 
         function startGame() { socket.emit('startGame', myRoomId); }
@@ -136,9 +169,30 @@
             socket.emit('playerReady', myRoomId); 
         }
 
+        // Timer Logic
+        function startTimer(durationMinutes) {
+            let time = durationMinutes * 60;
+            const display = document.getElementById('timer-display');
+            
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                let minutes = Math.floor(time / 60);
+                let seconds = time % 60;
+                
+                minutes = minutes < 10 ? "0" + minutes : minutes;
+                seconds = seconds < 10 ? "0" + seconds : seconds;
+                
+                display.textContent = minutes + ":" + seconds;
+                
+                if (--time < 0) {
+                    clearInterval(timerInterval);
+                    display.textContent = "TIME'S UP!";
+                }
+            }, 1000);
+        }
+
         // Socket Listeners
         socket.on('lobbyCreated', (data) => {
-            // Populate Categories only once when creating
             const select = document.getElementById('category-select');
             select.innerHTML = '';
             data.categories.forEach(c => {
@@ -154,11 +208,14 @@
             isHost = data.isHost;
             document.getElementById('lobby-code-display').innerText = "Code: " + data.roomId;
             
+            // Reset ready button state
+            document.getElementById('btn-continue').style.display = 'inline-block';
+            document.getElementById('waiting-others').style.display = 'none';
+
             if (isHost) {
                 document.getElementById('host-controls').style.display = 'block';
                 document.getElementById('waiting-msg').style.display = 'none';
                 
-                // If joining as host, we also need to populate categories if not already done
                  if(document.getElementById('category-select').options.length === 0) {
                      data.categories.forEach(c => {
                         let opt = document.createElement('option');
@@ -186,27 +243,29 @@
 
         socket.on('gameStarted', (data) => {
             showScreen('screen-reveal');
-            
-            // Store starter name for next screen
             document.getElementById('starter-name').innerText = data.startingPlayer;
 
             if (data.isImposter) {
                 document.getElementById('role-title').innerText = "SHHH!";
                 document.getElementById('imposter-view').style.display = 'block';
                 document.getElementById('normal-view').style.display = 'none';
+                // Show category to Imposter
+                document.getElementById('imposter-category-display').innerText = data.category;
             } else {
                 document.getElementById('role-title').innerText = "MEMORIZE!";
                 document.getElementById('imposter-view').style.display = 'none';
                 document.getElementById('normal-view').style.display = 'block';
                 
+                document.getElementById('normal-category').innerText = data.category;
                 document.getElementById('word-reveal').innerText = data.wordData.word;
                 document.getElementById('hebrew-word').innerText = data.wordData.hebrew;
                 document.getElementById('hebrew-def').innerText = data.wordData.def;
             }
         });
 
-        socket.on('allReady', () => {
+        socket.on('allReady', (data) => {
             showScreen('screen-game');
+            startTimer(data.duration);
         });
 
         socket.on('error', (msg) => alert(msg));
